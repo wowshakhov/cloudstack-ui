@@ -44,11 +44,9 @@ export class PopoverTriggerDirective implements AfterViewInit, OnDestroy {
 
   private portal: TemplatePortal<any>;
   private overlayRef: OverlayRef | null = null;
-  // tslint:disable-next-line:variable-name
-  private _open = false;
 
   constructor(
-    private overlay: Overlay,
+    private overlayBuilder: Overlay,
     private element: ElementRef,
     private viewContainerRef: ViewContainerRef,
   ) {}
@@ -73,7 +71,7 @@ export class PopoverTriggerDirective implements AfterViewInit, OnDestroy {
 
   @HostListener('click')
   public handleClick() {
-    if (this._open) {
+    if (this.open) {
       this.closePopover();
     } else {
       this.openPopover();
@@ -86,7 +84,7 @@ export class PopoverTriggerDirective implements AfterViewInit, OnDestroy {
     const el = this.element.nativeElement;
 
     if (
-      this._open &&
+      this.open &&
       clickTarget !== el &&
       !el.contains(clickTarget) &&
       !!this.overlayRef &&
@@ -97,37 +95,44 @@ export class PopoverTriggerDirective implements AfterViewInit, OnDestroy {
   }
 
   public get open(): boolean {
-    return this._open;
+    if (!this.overlayRef) {
+      return false;
+    }
+
+    return this.overlayRef.hasAttached();
   }
 
   public openPopover() {
-    if (!this._open) {
-      this.createOverlay().attach(this.portal);
-      this._open = true;
+    if (!this.open) {
+      const { overlay, portal } = this.createOverlay();
+      this.overlayRef = overlay;
+      this.portal = portal;
+      this.overlayRef.attach(this.portal);
       this.popoverOpened.emit();
     }
   }
 
   public closePopover() {
-    if (this.overlayRef && this._open) {
+    if (this.open && this.overlayRef) {
       this.overlayRef.detach();
-      this._open = false;
       this.popoverClosed.emit();
     }
   }
 
-  private createOverlay(): OverlayRef {
-    if (!this.overlayRef) {
-      this.portal = new TemplatePortal(this.csPopoverTrigger.templateRef, this.viewContainerRef);
+  private createOverlay(): { overlay: OverlayRef; portal: TemplatePortal } {
+    const portal = new TemplatePortal(this.csPopoverTrigger.templateRef, this.viewContainerRef);
 
-      const config = new OverlayConfig();
-      config.positionStrategy = this.getPositionStrategy();
-      config.scrollStrategy = this.overlay.scrollStrategies.reposition();
+    const overlay = this.overlayBuilder.create(
+      new OverlayConfig({
+        positionStrategy: this.getPositionStrategy(),
+        scrollStrategy: this.overlayBuilder.scrollStrategies.reposition(),
+      }),
+    );
 
-      this.overlayRef = this.overlay.create(config);
-    }
-
-    return this.overlayRef;
+    return {
+      overlay,
+      portal,
+    };
   }
 
   private getPositionStrategy(): PositionStrategy {
@@ -138,32 +143,22 @@ export class PopoverTriggerDirective implements AfterViewInit, OnDestroy {
     const fallbackOverlayY =
       overlayY === 'top' ? 'bottom' : overlayY === 'bottom' ? 'top' : 'center';
 
-    return (
-      this.overlay
-        .position()
-        // todo
-        // tslint:disable-next-line:deprecation
-        .connectedTo(
-          this.element,
-          {
-            originX: 'center',
-            originY: 'bottom',
-          },
-          {
-            overlayX,
-            overlayY,
-          },
-        )
-        .withFallbackPosition(
-          {
-            originX: 'center',
-            originY: 'top',
-          },
-          {
-            overlayX: fallbackOverlayX,
-            overlayY: fallbackOverlayY,
-          },
-        )
-    );
+    return this.overlayBuilder
+      .position()
+      .flexibleConnectedTo(this.element)
+      .withPositions([
+        {
+          overlayX,
+          overlayY,
+          originX: 'center',
+          originY: 'bottom',
+        },
+        {
+          overlayX: fallbackOverlayX,
+          overlayY: fallbackOverlayY,
+          originX: 'center',
+          originY: 'top',
+        },
+      ]);
   }
 }
